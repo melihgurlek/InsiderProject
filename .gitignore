@@ -1,0 +1,21 @@
+# Compiled executable
+# The name often matches the project or parent directory name.
+# For example, if you run 'go build' in 'cmd/backend', it might create a 'backend' executable.
+backend
+InsiderProject
+
+# Local environment variables
+# Often contain sensitive keys and should never be pushed to GitHub.
+.env
+
+# Go build cache
+/vendor/
+*~
+*.out
+*.exe
+*.test
+
+# IDE and editor specific files
+.idea/
+.vscode/
+*.swp
