@@ -118,3 +118,8 @@ func (s *TransactionServiceImpl) GetTransaction(id int) (*domain.Transaction, er
 func (s *TransactionServiceImpl) ListUserTransactions(userID int) ([]*domain.Transaction, error) {
 	return s.txRepo.ListByUser(userID)
 }
+
+// ListAllTransactions returns all transactions.
+func (s *TransactionServiceImpl) ListAllTransactions() ([]*domain.Transaction, error) {
+	return s.txRepo.ListAll()
+}

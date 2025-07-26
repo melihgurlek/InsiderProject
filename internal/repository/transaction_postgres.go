@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/melihgurlek/backend-path/internal/domain"
@@ -68,6 +69,27 @@ func (r *TransactionPostgresRepository) ListByUser(userID int) ([]*domain.Transa
 func (r *TransactionPostgresRepository) ListAll() ([]*domain.Transaction, error) {
 	query := `SELECT id, from_user_id, to_user_id, amount, type, status, created_at FROM transactions ORDER BY created_at DESC`
 	rows, err := r.conn.Query(context.Background(), query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var txs []*domain.Transaction
+	for rows.Next() {
+		tx := &domain.Transaction{}
+		err := rows.Scan(&tx.ID, &tx.FromUserID, &tx.ToUserID, &tx.Amount, &tx.Type, &tx.Status, &tx.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		txs = append(txs, tx)
+	}
+	return txs, nil
+}
+
+// ListByUserAndTimeRange fetches all transactions for a user (as sender or receiver) within a time range.
+func (r *TransactionPostgresRepository) ListByUserAndTimeRange(userID int, from, to time.Time) ([]*domain.Transaction, error) {
+	query := `SELECT id, from_user_id, to_user_id, amount, type, status, created_at FROM transactions WHERE (from_user_id = $1 OR to_user_id = $1) AND created_at >= $2 AND created_at <= $3 ORDER BY created_at ASC`
+	rows, err := r.conn.Query(context.Background(), query, userID, from, to)
 	if err != nil {
 		return nil, err
 	}

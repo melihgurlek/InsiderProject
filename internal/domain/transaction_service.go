@@ -7,4 +7,5 @@ type TransactionService interface {
 	Transfer(fromUserID, toUserID int, amount float64) error
 	GetTransaction(id int) (*Transaction, error)
 	ListUserTransactions(userID int) ([]*Transaction, error)
+	ListAllTransactions() ([]*Transaction, error)
 }
