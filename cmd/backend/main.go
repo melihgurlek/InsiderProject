@@ -18,7 +18,9 @@ import (
 	"github.com/melihgurlek/backend-path/internal/middleware"
 	"github.com/melihgurlek/backend-path/internal/repository"
 	"github.com/melihgurlek/backend-path/internal/service"
+	"github.com/melihgurlek/backend-path/internal/worker"
 	"github.com/melihgurlek/backend-path/pkg"
+	"github.com/melihgurlek/backend-path/pkg/cache"
 	"github.com/melihgurlek/backend-path/pkg/tracing"
 )
 
@@ -49,6 +51,20 @@ func main() {
 		log.Info().Msg("OpenTelemetry tracing initialized")
 	}
 
+	// Initialize Redis cache
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "redis://redis:6379"
+	}
+
+	redisCache, err := cache.NewRedisCache(redisURL)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to initialize Redis cache")
+	} else {
+		defer redisCache.Close()
+		log.Info().Msg("Redis cache initialized")
+	}
+
 	// Connect to PostgreSQL
 	ctx := context.Background()
 	conn, err := repository.ConnectDB(ctx, cfg.DBUrl)
@@ -74,7 +90,44 @@ func main() {
 	balanceService := service.NewBalanceService(balanceRepo)
 	balanceHandler := handler.NewBalanceHandler(balanceService)
 
+	// Initialize business metrics service
+	businessMetricsService := service.NewBusinessMetricsService(
+		userRepo,
+		transactionRepo,
+		balanceRepo,
+	)
+
 	testHandler := handler.NewTestHandler()
+
+	// Initialize business metrics handler
+	businessMetricsHandler := handler.NewBusinessMetricsHandler(businessMetricsService)
+
+	// Initialize transaction processor (worker pool)
+	transactionProcessor := worker.NewTransactionProcessor(
+		transactionService,
+		balanceService,
+		5,   // 5 workers
+		100, // queue size of 100
+	)
+
+	// Start the transaction processor
+	if err := transactionProcessor.Start(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start transaction processor")
+	}
+	defer func() {
+		if err := transactionProcessor.Stop(ctx); err != nil {
+			log.Error().Err(err).Msg("Failed to stop transaction processor")
+		}
+	}()
+
+	// Start the business metrics service
+	businessMetricsService.Start(ctx)
+	defer businessMetricsService.Stop()
+
+	batchProcessor := worker.NewBatchProcessor(transactionProcessor, 5, 30*time.Second)
+
+	// Initialize worker handler
+	workerHandler := handler.NewWorkerHandler(transactionProcessor, batchProcessor)
 
 	jwtValidator := pkg.NewJWTValidator(cfg.JWTSecret)
 	authMiddleware := middleware.NewAuthMiddleware(jwtValidator)
@@ -92,6 +145,13 @@ func main() {
 	metricsMiddleware := middleware.NewMetricsMiddleware()
 	r.Use(metricsMiddleware.Middleware)
 
+	// Add cache middleware (if Redis is available)
+	if redisCache != nil {
+		cacheMiddleware := middleware.NewCacheMiddleware(redisCache, 5*time.Minute)
+		r.Use(cacheMiddleware.Middleware)
+		log.Info().Msg("Cache middleware enabled")
+	}
+
 	jsonValidator := &middleware.JSONValidator{}
 	validateRegister := middleware.ValidationMiddleware(jsonValidator, func() interface{} { return &handler.RegisterRequest{} })
 	validateLogin := middleware.ValidationMiddleware(jsonValidator, func() interface{} { return &handler.LoginRequest{} })
@@ -106,7 +166,17 @@ func main() {
 			testHandler.RegisterRoutes(r)
 		})
 
+		// Business metrics routes (no auth required for monitoring)
+		r.Route("/metrics", func(r chi.Router) {
+			businessMetricsHandler.RegisterRoutes(r)
+		})
+
 		r.With(authMiddleware.Middleware).Group(func(r chi.Router) {
+			// --- Worker Routes ---
+			r.Route("/worker", func(r chi.Router) {
+				workerHandler.RegisterRoutes(r)
+			})
+
 			// --- User Routes ---
 			r.Route("/users", func(r chi.Router) {
 				r.With(middleware.RequireRoles("admin")).Get("/", userHandler.ListUsers)

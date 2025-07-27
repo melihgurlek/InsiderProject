@@ -97,6 +97,18 @@ func (h *TestHandler) Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// CacheTest handles GET /api/v1/test/cache - demonstrates caching with timestamp
+func (h *TestHandler) CacheTest(w http.ResponseWriter, r *http.Request) {
+	response := map[string]interface{}{
+		"message":   "This response should be cached for 5 minutes",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"cache_key": "cache_test",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // RegisterRoutes registers test routes to the router.
 func (h *TestHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/echo", h.Echo)
@@ -104,4 +116,5 @@ func (h *TestHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/error", h.Error)
 	r.Get("/slow", h.Slow)
 	r.Get("/health", h.Health)
+	r.Get("/cache", h.CacheTest)
 }

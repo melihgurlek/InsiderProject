@@ -1,5 +1,7 @@
 package domain
 
+import "context"
+
 // UserRepository defines methods for user data access.
 type UserRepository interface {
 	Create(user *User) error
@@ -9,4 +11,5 @@ type UserRepository interface {
 	Update(user *User) error
 	Delete(id int) error
 	List() ([]*User, error)
+	Ping(ctx context.Context) error
 }

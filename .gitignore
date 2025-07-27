@@ -1,7 +1,6 @@
 # Compiled executable
 # The name often matches the project or parent directory name.
 # For example, if you run 'go build' in 'cmd/backend', it might create a 'backend' executable.
-backend
 InsiderProject
 
 # Local environment variables

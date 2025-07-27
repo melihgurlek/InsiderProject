@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/melihgurlek/backend-path/internal/domain"
+	"github.com/melihgurlek/backend-path/pkg/metrics"
 )
 
 // UserServiceImpl implements domain.UserService.
@@ -45,6 +46,10 @@ func (s *UserServiceImpl) Register(username, email, password string) (*domain.Us
 	if err := s.repo.Create(user); err != nil {
 		return nil, err
 	}
+
+	// Record business metrics
+	metrics.UserRegistrationTotal.Inc()
+
 	return user, nil
 }
 
@@ -52,11 +57,19 @@ func (s *UserServiceImpl) Register(username, email, password string) (*domain.Us
 func (s *UserServiceImpl) Login(username, password string) (*domain.User, error) {
 	user, err := s.repo.GetByUsername(username)
 	if err != nil || user == nil {
+		// Record failed login
+		metrics.UserLoginTotal.WithLabelValues("failure").Inc()
 		return nil, errors.New("invalid username or password")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
+		// Record failed login
+		metrics.UserLoginTotal.WithLabelValues("failure").Inc()
 		return nil, errors.New("invalid username or password")
 	}
+
+	// Record successful login
+	metrics.UserLoginTotal.WithLabelValues("success").Inc()
+
 	return user, nil
 }
 

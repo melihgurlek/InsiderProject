@@ -18,6 +18,13 @@ func NewUserPostgresRepository(conn *pgx.Conn) *UserPostgresRepository {
 	return &UserPostgresRepository{conn: conn}
 }
 
+// Ping checks the database connection health.
+func (r *UserPostgresRepository) Ping(ctx context.Context) error {
+	// Executing a simple query is a reliable way to check the connection.
+	_, err := r.conn.Exec(ctx, "SELECT 1")
+	return err
+}
+
 // Create inserts a new user into the database.
 func (r *UserPostgresRepository) Create(user *domain.User) error {
 	query := `INSERT INTO users (username, email, password_hash, role, created_at, updated_at)
