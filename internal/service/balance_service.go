@@ -18,8 +18,8 @@ func (s *BalanceServiceImpl) GetCurrentBalance(userID int) (*domain.Balance, err
 	return s.repo.GetByUserID(userID)
 }
 
-func (s *BalanceServiceImpl) GetHistoricalBalance(userID int) ([]*domain.Balance, error) {
-	return s.repo.GetHistoricalBalance(userID)
+func (s *BalanceServiceImpl) GetHistoricalBalance(userID int, limit int) ([]*domain.Balance, error) {
+	return s.repo.GetHistoricalBalance(userID, limit)
 }
 
 func (s *BalanceServiceImpl) GetBalanceAtTime(userID int, t time.Time) (*domain.Balance, error) {

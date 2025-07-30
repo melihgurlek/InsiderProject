@@ -258,4 +258,51 @@ var (
 		},
 		[]string{"endpoint", "method"},
 	)
+
+	// ===== SCHEDULED TRANSACTION METRICS =====
+
+	// ScheduledTransactionCount tracks scheduled transaction metrics
+	ScheduledTransactionCount = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scheduled_transaction_count_total",
+			Help: "Total number of scheduled transactions",
+		},
+		[]string{"transaction_type", "status"}, // credit, debit, transfer, pending, completed, failed, cancelled
+	)
+
+	// ScheduledTransactionExecutionSuccess tracks successful scheduled transaction executions
+	ScheduledTransactionExecutionSuccess = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scheduled_transaction_execution_success_total",
+			Help: "Total number of successful scheduled transaction executions",
+		},
+		[]string{"transaction_type"},
+	)
+
+	// ScheduledTransactionExecutionFailure tracks failed scheduled transaction executions
+	ScheduledTransactionExecutionFailure = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "scheduled_transaction_execution_failure_total",
+			Help: "Total number of failed scheduled transaction executions",
+		},
+		[]string{"transaction_type"},
+	)
+
+	// ScheduledTransactionExecutionDuration tracks scheduled transaction execution duration
+	ScheduledTransactionExecutionDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "scheduled_transaction_execution_duration_seconds",
+			Help:    "Scheduled transaction execution duration in seconds",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"transaction_type"},
+	)
+
+	// ScheduledTransactionQueueSize tracks the current number of pending scheduled transactions
+	ScheduledTransactionQueueSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "scheduled_transaction_queue_size",
+			Help: "Current number of pending scheduled transactions",
+		},
+	)
 )

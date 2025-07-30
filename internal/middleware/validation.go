@@ -1,74 +1,88 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
+	"reflect"
 	"strings"
 )
 
-// Validator defines the interface for request validation.
+// Validatable is an interface for structs that can be validated.
+type Validatable interface {
+	Validate() error
+}
+
 type Validator interface {
 	Validate(ctx context.Context, r *http.Request, v interface{}) error
 }
 
-// JSONValidator is a default implementation of Validator for JSON payloads.
 type JSONValidator struct{}
 
-// Validate decodes and validates a JSON request body into v.
 func (jv *JSONValidator) Validate(ctx context.Context, r *http.Request, v interface{}) error {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		return ErrInvalidContentType
 	}
-	body, err := io.ReadAll(r.Body)
+
+	// Read the body and then replace it so it can be read again
+	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		return err
 	}
-	if err := json.Unmarshal(body, v); err != nil {
-		return err
+	r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	if err := json.Unmarshal(bodyBytes, v); err != nil {
+		return &ValidationError{Msg: "invalid JSON format"}
 	}
-	// Optionally, add struct-level validation here (e.g., required fields)
+
+	// Check if the decoded struct implements the Validatable interface
+	if validatable, ok := v.(Validatable); ok {
+		if err := validatable.Validate(); err != nil {
+			return err
+		}
+	} else {
+		// Also check if the pointer to the struct implements it
+		ptr := reflect.New(reflect.TypeOf(v).Elem())
+		ptr.Elem().Set(reflect.ValueOf(v).Elem())
+		if validatable, ok := ptr.Interface().(Validatable); ok {
+			if err := validatable.Validate(); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
-// ErrInvalidContentType is returned when the request is not JSON.
-var ErrInvalidContentType = &ValidationError{"invalid content type, expected application/json"}
+var ErrInvalidContentType = &ValidationError{Msg: "invalid content type, expected application/json"}
 
-// ValidationError represents a request validation error.
 type ValidationError struct {
 	Msg string
 }
 
 func (e *ValidationError) Error() string { return e.Msg }
 
-// ValidationMiddleware returns a middleware that validates requests using the provided Validator.
 func ValidationMiddleware(validator Validator, vFactory func() interface{}) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			v := vFactory()
-			if err := validator.Validate(r.Context(), r, v); err != nil {
-				http.Error(w, "validation error: "+err.Error(), http.StatusBadRequest)
+			if err := validator.Validate(r.Context(), r, &v); err != nil {
+				// Return a 400 Bad Request for any validation error
+				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-			// Store validated struct in context for handler use
 			ctx := context.WithValue(r.Context(), validatedBodyKey{}, v)
-
-			// Debug: Log what we're storing
-			log.Printf("DEBUG: Storing validated body of type %T in context", v)
-
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// validatedBodyKey is the context key for the validated request body.
 type validatedBodyKey struct{}
 
-// GetValidatedBody retrieves the validated request body from context.
 func GetValidatedBody[T any](ctx context.Context) (T, bool) {
 	v, ok := ctx.Value(validatedBodyKey{}).(T)
-	log.Printf("DEBUG: Retrieving from context, found: %v, ok: %v, type: %T", v, ok, v)
 	return v, ok
 }

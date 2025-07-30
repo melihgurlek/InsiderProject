@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"github.com/melihgurlek/backend-path/internal/domain"
@@ -179,6 +180,6 @@ func (s *TransactionServiceImpl) ListUserTransactions(userID int) ([]*domain.Tra
 }
 
 // ListAllTransactions returns all transactions.
-func (s *TransactionServiceImpl) ListAllTransactions() ([]*domain.Transaction, error) {
-	return s.txRepo.ListAll()
+func (s *TransactionServiceImpl) ListAllTransactions(ctx context.Context, limit int, offset int) ([]*domain.Transaction, error) {
+	return s.txRepo.ListAll(ctx, limit, offset)
 }

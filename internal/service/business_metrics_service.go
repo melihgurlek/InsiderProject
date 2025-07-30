@@ -55,7 +55,7 @@ func (s *BusinessMetricsService) metricsCollector(ctx context.Context) {
 	defer ticker.Stop()
 
 	// Initial collection
-	s.collectMetrics(ctx)
+	s.collectMetrics(ctx, 1000, 0)
 
 	for {
 		select {
@@ -64,13 +64,13 @@ func (s *BusinessMetricsService) metricsCollector(ctx context.Context) {
 		case <-s.stopChan:
 			return
 		case <-ticker.C:
-			s.collectMetrics(ctx)
+			s.collectMetrics(ctx, 1000, 0)
 		}
 	}
 }
 
 // collectMetrics collects all business metrics from the database
-func (s *BusinessMetricsService) collectMetrics(ctx context.Context) {
+func (s *BusinessMetricsService) collectMetrics(ctx context.Context, limit int, offset int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -80,7 +80,7 @@ func (s *BusinessMetricsService) collectMetrics(ctx context.Context) {
 	s.collectUserMetrics(ctx)
 
 	// Collect transaction metrics
-	s.collectTransactionMetrics(ctx)
+	s.collectTransactionMetrics(ctx, limit, offset)
 
 	// Collect balance metrics
 	s.collectBalanceMetrics(ctx)
@@ -127,9 +127,9 @@ func (s *BusinessMetricsService) collectUserMetrics(ctx context.Context) {
 }
 
 // collectTransactionMetrics collects transaction-related metrics
-func (s *BusinessMetricsService) collectTransactionMetrics(ctx context.Context) {
+func (s *BusinessMetricsService) collectTransactionMetrics(ctx context.Context, limit int, offset int) {
 	// Get all transactions
-	transactions, err := s.transactionRepo.ListAll()
+	transactions, err := s.transactionRepo.ListAll(ctx, limit, offset) // Default limit of 1000, offset 0
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get transactions for metrics")
 		metrics.ErrorRate.WithLabelValues("database", "warning").Inc()

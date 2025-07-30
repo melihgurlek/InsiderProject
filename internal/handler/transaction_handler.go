@@ -84,7 +84,26 @@ func (h *TransactionHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *TransactionHandler) ListAllTransactions(w http.ResponseWriter, r *http.Request) {
-	transactions, err := h.service.ListAllTransactions()
+	// Get limit and offset from query parameters
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+
+	limit := 100 // Default limit
+	offset := 0  // Default offset
+
+	if limitStr != "" {
+		if limitInt, err := strconv.Atoi(limitStr); err == nil && limitInt > 0 {
+			limit = limitInt
+		}
+	}
+
+	if offsetStr != "" {
+		if offsetInt, err := strconv.Atoi(offsetStr); err == nil && offsetInt >= 0 {
+			offset = offsetInt
+		}
+	}
+
+	transactions, err := h.service.ListAllTransactions(r.Context(), limit, offset)
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, err.Error())
 		return

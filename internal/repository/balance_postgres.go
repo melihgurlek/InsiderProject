@@ -6,26 +6,27 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/melihgurlek/backend-path/internal/domain"
 )
 
 type BalancePostgresRepository struct {
-	conn *pgx.Conn
+	pool *pgxpool.Pool
 }
 
-func NewBalancePostgresRepository(conn *pgx.Conn) *BalancePostgresRepository {
-	return &BalancePostgresRepository{conn: conn}
+func NewBalancePostgresRepository(pool *pgxpool.Pool) *BalancePostgresRepository {
+	return &BalancePostgresRepository{pool: pool}
 }
 
 func (r *BalancePostgresRepository) Create(balance *domain.Balance) error {
-	_, err := r.conn.Exec(context.Background(), "INSERT INTO balances (user_id, amount, last_updated_at) VALUES ($1, $2, $3)", balance.UserID, balance.Amount, balance.LastUpdatedAt)
+	_, err := r.pool.Exec(context.Background(), "INSERT INTO balances (user_id, amount, last_updated_at) VALUES ($1, $2, $3)", balance.UserID, balance.Amount, balance.LastUpdatedAt)
 	return err
 }
 
 func (r *BalancePostgresRepository) GetByUserID(userID int) (*domain.Balance, error) {
 	balance := &domain.Balance{}
 	query := `SELECT user_id, amount, last_updated_at FROM balances WHERE user_id = $1`
-	err := r.conn.QueryRow(context.Background(), query, userID).Scan(&balance.UserID, &balance.Amount, &balance.LastUpdatedAt)
+	err := r.pool.QueryRow(context.Background(), query, userID).Scan(&balance.UserID, &balance.Amount, &balance.LastUpdatedAt)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -36,88 +37,161 @@ func (r *BalancePostgresRepository) GetByUserID(userID int) (*domain.Balance, er
 	return balance, nil
 }
 
+// Update updates a user's balance with proper locking to prevent race conditions
 func (r *BalancePostgresRepository) Update(balance *domain.Balance) error {
-	query := `INSERT INTO balances (user_id, amount, last_updated_at) 
-	VALUES ($1, $2, NOW()) 
-	ON CONFLICT (user_id) DO UPDATE SET amount = $2, last_updated_at = NOW()`
+	// Use a transaction to ensure atomicity and prevent race conditions
+	tx, err := r.pool.Begin(context.Background())
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(context.Background())
 
-	_, err := r.conn.Exec(context.Background(), query, balance.UserID, balance.Amount)
-	return err
+	// Lock the row for update to prevent concurrent modifications
+	query := `SELECT user_id, amount, last_updated_at FROM balances WHERE user_id = $1 FOR UPDATE`
+	var currentBalance domain.Balance
+	err = tx.QueryRow(context.Background(), query, balance.UserID).Scan(
+		&currentBalance.UserID, &currentBalance.Amount, &currentBalance.LastUpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// User doesn't have a balance record yet, create one
+			insertQuery := `INSERT INTO balances (user_id, amount, last_updated_at) VALUES ($1, $2, NOW())`
+			_, err = tx.Exec(context.Background(), insertQuery, balance.UserID, balance.Amount)
+		}
+	} else {
+		// Update existing balance
+		updateQuery := `UPDATE balances SET amount = $1, last_updated_at = NOW() WHERE user_id = $2`
+		_, err = tx.Exec(context.Background(), updateQuery, balance.Amount, balance.UserID)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(context.Background())
 }
 
-func (r *BalancePostgresRepository) GetHistoricalBalance(userID int) ([]*domain.Balance, error) {
-	// Calculate daily balances for the past 30 days (including today)
-	nDays := 30
-	end := time.Now().Truncate(24 * time.Hour).Add(24 * time.Hour) // tomorrow 00:00
-	start := end.AddDate(0, 0, -nDays)
+// GetHistoricalBalances calculates balance history from transaction data
+func (r *BalancePostgresRepository) GetHistoricalBalance(userID int, limit int) ([]*domain.Balance, error) {
+	query := `
+		WITH daily_balances AS (
+			SELECT 
+				DATE(created_at) as balance_date,
+				SUM(CASE 
+					WHEN to_user_id = $1 AND type IN ('credit', 'transfer') THEN amount
+					WHEN from_user_id = $1 AND type IN ('debit', 'transfer') THEN -amount
+					ELSE 0 
+				END) as daily_change
+			FROM transactions 
+			WHERE (to_user_id = $1 OR from_user_id = $1) 
+				AND status = 'completed'
+				AND created_at >= CURRENT_DATE - INTERVAL '30 days'
+			GROUP BY DATE(created_at)
+			ORDER BY balance_date DESC
+		),
+		cumulative_balances AS (
+			SELECT 
+				balance_date,
+				daily_change,
+				SUM(daily_change) OVER (
+					ORDER BY balance_date DESC 
+					ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+				) as cumulative_balance
+			FROM daily_balances
+		)
+		SELECT 
+			$1::integer as user_id,
+			cumulative_balance as amount,
+			balance_date as last_updated_at
+		FROM cumulative_balances
+		ORDER BY balance_date DESC
+		LIMIT $2
+	`
 
-	// Use the transaction repository to get all transactions in the range
-	trxRepo := NewTransactionPostgresRepository(r.conn)
-	transactions, err := trxRepo.ListByUserAndTimeRange(userID, time.Time{}, end) // get all up to 'end'
+	rows, err := r.pool.Query(context.Background(), query, userID, limit)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 
-	// Prepare a map of day -> net change (fix off-by-one)
-	balanceByDay := make([]float64, nDays)
-	for _, tx := range transactions {
-		for i := 0; i < nDays; i++ {
-			dayStart := start.AddDate(0, 0, i)
-			dayEnd := start.AddDate(0, 0, i+1)
-			if !tx.CreatedAt.Before(dayStart) && tx.CreatedAt.Before(dayEnd) {
-				if tx.ToUserID != nil && *tx.ToUserID == userID && (tx.Type == "credit" || tx.Type == "transfer") {
-					balanceByDay[i] += tx.Amount
-				}
-				if tx.FromUserID != nil && *tx.FromUserID == userID && (tx.Type == "debit" || tx.Type == "transfer") {
-					balanceByDay[i] -= tx.Amount
-				}
-				break
-			}
+	var balances []*domain.Balance
+	for rows.Next() {
+		balance := &domain.Balance{}
+		err := rows.Scan(&balance.UserID, &balance.Amount, &balance.LastUpdatedAt)
+		if err != nil {
+			return nil, err
 		}
+		balances = append(balances, balance)
 	}
 
-	// Build the time series
-	balances := make([]*domain.Balance, nDays)
-	cumulative := 0.0
-	for i := 0; i < nDays; i++ {
-		cumulative += balanceByDay[i]
-		balances[i] = &domain.Balance{
-			UserID:        userID,
-			Amount:        cumulative,
-			LastUpdatedAt: start.AddDate(0, 0, i),
-		}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
+
 	return balances, nil
 }
 
-func (r *BalancePostgresRepository) GetBalanceAtTime(userID int, t time.Time) (*domain.Balance, error) {
+// GetBalanceAtTime calculates the balance at a specific point in time from transaction history
+func (r *BalancePostgresRepository) GetBalanceAtTime(userID int, timestamp time.Time) (*domain.Balance, error) {
 	query := `
-        SELECT
-            COALESCE(SUM(CASE
-                WHEN to_user_id = $1 AND type IN ('credit', 'transfer') THEN amount
-                ELSE 0 END), 0) as total_credits,
-            COALESCE(SUM(CASE
-                WHEN from_user_id = $1 AND type IN ('debit', 'transfer') THEN amount
-                ELSE 0 END), 0) as total_debits
-        FROM
-            transactions
-        WHERE
-            (to_user_id = $1 OR from_user_id = $1) AND created_at <= $2;
-    `
+		SELECT 
+			$1::integer as user_id,
+			COALESCE(SUM(CASE 
+				WHEN to_user_id = $1 AND type IN ('credit', 'transfer') THEN amount
+				WHEN from_user_id = $1 AND type IN ('debit', 'transfer') THEN -amount
+				ELSE 0 
+			END), 0) as amount,
+			$2::timestamp as last_updated_at
+		FROM transactions 
+		WHERE (to_user_id = $1 OR from_user_id = $1) 
+			AND status = 'completed'
+			AND created_at <= $2
+	`
 
-	var credits float64
-	var debits float64
+	balance := &domain.Balance{}
+	err := r.pool.QueryRow(context.Background(), query, userID, timestamp).Scan(
+		&balance.UserID, &balance.Amount, &balance.LastUpdatedAt,
+	)
 
-	err := r.conn.QueryRow(context.Background(), query, userID, t).Scan(&credits, &debits)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// No transactions found, return zero balance
+			return &domain.Balance{
+				UserID:        userID,
+				Amount:        0,
+				LastUpdatedAt: timestamp,
+			}, nil
+		}
+		return nil, err
+	}
+
+	return balance, nil
+}
+
+func (r *BalancePostgresRepository) GetCurrentBalance(userID int) (*domain.Balance, error) {
+	query := `
+		SELECT 
+			$1::integer as user_id,
+			COALESCE(SUM(CASE 
+				WHEN to_user_id = $1 AND type IN ('credit', 'transfer') THEN amount
+				WHEN from_user_id = $1 AND type IN ('debit', 'transfer') THEN -amount
+				ELSE 0 
+			END), 0) as amount,
+			NOW()::timestamp as last_updated_at
+		FROM transactions 
+		WHERE (to_user_id = $1 OR from_user_id = $1) 
+			AND status = 'completed'
+	`
+
+	balance := &domain.Balance{}
+	err := r.pool.QueryRow(context.Background(), query, userID).Scan(
+		&balance.UserID, &balance.Amount, &balance.LastUpdatedAt,
+	)
+
 	if err != nil {
 		return nil, err
 	}
 
-	finalBalance := credits - debits
-
-	return &domain.Balance{
-		UserID:        userID,
-		Amount:        finalBalance,
-		LastUpdatedAt: t,
-	}, nil
+	return balance, nil
 }

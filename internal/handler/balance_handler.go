@@ -28,47 +28,44 @@ func (h *BalanceHandler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *BalanceHandler) GetCurrentBalance(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		UserID int `json:"user_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
 	userIDInt, err := strconv.Atoi(chi.URLParam(r, "user_id"))
 	if err != nil {
 		h.respondError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
+
 	balance, err := h.service.GetCurrentBalance(userIDInt)
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(balance)
 }
 
 func (h *BalanceHandler) GetHistoricalBalance(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		UserID int `json:"user_id"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.respondError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
 	userIDInt, err := strconv.Atoi(chi.URLParam(r, "user_id"))
 	if err != nil {
 		h.respondError(w, http.StatusBadRequest, "invalid user id")
 		return
 	}
-	balance, err := h.service.GetHistoricalBalance(userIDInt)
+
+	limitStr := r.URL.Query().Get("limit")
+	limit := 30
+	if limitStr != "" {
+		if limitInt, err := strconv.Atoi(limitStr); err == nil && limitInt > 0 {
+			limit = limitInt
+		}
+	}
+
+	balances, err := h.service.GetHistoricalBalance(userIDInt, limit)
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(balance)
+	json.NewEncoder(w).Encode(balances)
 }
 
 func (h *BalanceHandler) GetBalanceAtTime(w http.ResponseWriter, r *http.Request) {

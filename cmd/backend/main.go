@@ -67,28 +67,33 @@ func main() {
 
 	// Connect to PostgreSQL
 	ctx := context.Background()
-	conn, err := repository.ConnectDB(ctx, cfg.DBUrl)
+	pool, err := repository.ConnectDB(ctx, cfg.DBUrl)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
 	log.Info().Msg("Connected to PostgreSQL database!")
 	defer func() {
-		_ = conn.Close(ctx)
-		log.Info().Msg("Database connection closed.")
+		pool.Close()
+		log.Info().Msg("Database connection pool closed.")
 	}()
 
 	// Set up repository, service, handler
-	userRepo := repository.NewUserPostgresRepository(conn)
+	userRepo := repository.NewUserPostgresRepository(pool)
 	userService := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userService, cfg.JWTSecret)
 
-	balanceRepo := repository.NewBalancePostgresRepository(conn)
-	transactionRepo := repository.NewTransactionPostgresRepository(conn)
+	balanceRepo := repository.NewBalancePostgresRepository(pool)
+	transactionRepo := repository.NewTransactionPostgresRepository(pool)
 	transactionService := service.NewTransactionService(transactionRepo, balanceRepo)
 	transactionHandler := handler.NewTransactionHandler(transactionService)
 
 	balanceService := service.NewBalanceService(balanceRepo)
 	balanceHandler := handler.NewBalanceHandler(balanceService)
+
+	// Initialize scheduled transaction repository and service
+	scheduledRepo := repository.NewScheduledTransactionPostgresRepository(pool)
+	scheduledService := service.NewScheduledTransactionService(scheduledRepo, transactionService)
+	scheduledHandler := handler.NewScheduledTransactionHandler(scheduledService)
 
 	// Initialize business metrics service
 	businessMetricsService := service.NewBusinessMetricsService(
@@ -124,6 +129,10 @@ func main() {
 	businessMetricsService.Start(ctx)
 	defer businessMetricsService.Stop()
 
+	// Start the scheduled transaction service
+	scheduledService.Start(ctx)
+	defer scheduledService.Stop()
+
 	batchProcessor := worker.NewBatchProcessor(transactionProcessor, 5, 30*time.Second)
 
 	// Initialize worker handler
@@ -156,6 +165,7 @@ func main() {
 	validateRegister := middleware.ValidationMiddleware(jsonValidator, func() interface{} { return &handler.RegisterRequest{} })
 	validateLogin := middleware.ValidationMiddleware(jsonValidator, func() interface{} { return &handler.LoginRequest{} })
 	validateUpdate := middleware.ValidationMiddleware(jsonValidator, func() interface{} { return &handler.UpdateRequest{} })
+	validateCreateScheduledTx := middleware.ValidationMiddleware(jsonValidator, func() interface{} { return &handler.CreateScheduledTransactionRequest{} })
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.With(validateRegister).Post("/auth/register", userHandler.Register)
@@ -172,6 +182,18 @@ func main() {
 		})
 
 		r.With(authMiddleware.Middleware).Group(func(r chi.Router) {
+			// --- Scheduled Transaction Routes ---
+			r.Route("/scheduled-transactions", func(r chi.Router) {
+				r.With(validateCreateScheduledTx).Post("/", scheduledHandler.CreateScheduledTransaction)
+
+				r.Get("/", scheduledHandler.ListUserScheduledTransactions)
+				r.Get("/stats", scheduledHandler.GetScheduledTransactionStats)
+				r.Get("/{id}", scheduledHandler.GetScheduledTransaction)
+				r.Put("/{id}", scheduledHandler.UpdateScheduledTransaction)
+				r.Delete("/{id}", scheduledHandler.CancelScheduledTransaction)
+				r.Post("/execute", scheduledHandler.ExecuteScheduledTransactions)
+			})
+
 			// --- Worker Routes ---
 			r.Route("/worker", func(r chi.Router) {
 				workerHandler.RegisterRoutes(r)
@@ -186,14 +208,11 @@ func main() {
 			})
 
 			// --- Transaction Routes ---
-			r.Route("/transactions", func(r chi.Router) {
-				transactionHandler.RegisterRoutes(r)
-			})
+			transactionHandler.RegisterRoutes(r)
 
 			// --- Balance Routes ---
-			r.Route("/balances", func(r chi.Router) {
-				balanceHandler.RegisterRoutes(r)
-			})
+			balanceHandler.RegisterRoutes(r)
+
 		})
 	})
 
