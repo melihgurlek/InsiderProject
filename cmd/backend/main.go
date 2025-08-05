@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog/log"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/melihgurlek/backend-path/internal/config"
 	"github.com/melihgurlek/backend-path/internal/handler"
 	"github.com/melihgurlek/backend-path/internal/middleware"
@@ -67,7 +68,7 @@ func main() {
 
 	// Connect to PostgreSQL
 	ctx := context.Background()
-	pool, err := repository.ConnectDB(ctx, cfg.DBUrl)
+	pool, err := pgxpool.New(ctx, cfg.DBUrl)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to connect to database")
 	}
@@ -94,6 +95,10 @@ func main() {
 	scheduledRepo := repository.NewScheduledTransactionPostgresRepository(pool)
 	scheduledService := service.NewScheduledTransactionService(scheduledRepo, transactionService)
 	scheduledHandler := handler.NewScheduledTransactionHandler(scheduledService)
+
+	transactionLimitRepo := repository.NewTransactionLimitPostgresRepository(pool)
+	transactionLimitService := service.NewTransactionLimitService(transactionLimitRepo)
+	transactionLimitHandler := handler.NewTransactionLimitHandler(transactionLimitService)
 
 	// Initialize business metrics service
 	businessMetricsService := service.NewBusinessMetricsService(
@@ -212,6 +217,9 @@ func main() {
 
 			// --- Balance Routes ---
 			balanceHandler.RegisterRoutes(r)
+
+			// --- Transaction Limit Routes ---
+			transactionLimitHandler.RegisterRoutes(r)
 
 		})
 	})

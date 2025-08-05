@@ -40,11 +40,20 @@ func (st *ScheduledTransaction) Validate() error {
 	if st.Amount <= 0 {
 		return &ValidationError{Msg: "amount must be positive"}
 	}
-	// ... (other checks for type, transfer, recurrence)
-
-	// Use UTC for all time logic and include a grace period
+	if st.Type != "credit" && st.Type != "debit" && st.Type != "transfer" {
+		return &ValidationError{Msg: "type must be credit, debit, or transfer"}
+	}
+	if st.Status != "pending" && st.Status != "completed" && st.Status != "failed" && st.Status != "cancelled" {
+		return &ValidationError{Msg: "status must be pending, completed, failed, or cancelled"}
+	}
 	if st.ScheduleAt.Before(time.Now().UTC().Add(-10 * time.Second)) {
 		return &ValidationError{Msg: "schedule_at must be in the future"}
+	}
+	if st.Recurring && (st.Recurrence != "daily" && st.Recurrence != "weekly" && st.Recurrence != "monthly" && st.Recurrence != "yearly") {
+		return &ValidationError{Msg: "recurrence must be daily, weekly, monthly, or yearly"}
+	}
+	if st.Recurring && st.MaxRuns != nil && *st.MaxRuns <= 0 {
+		return &ValidationError{Msg: "max_runs must be positive"}
 	}
 
 	return nil

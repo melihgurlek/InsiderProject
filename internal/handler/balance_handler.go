@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/melihgurlek/backend-path/internal/domain"
+	"github.com/melihgurlek/backend-path/internal/middleware"
 )
 
 // BalanceHandler handles balance-related HTTP requests.
@@ -22,19 +23,24 @@ func NewBalanceHandler(service domain.BalanceService) *BalanceHandler {
 
 // RegisterRoutes registers balance endpoints to the router.
 func (h *BalanceHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/balances/current/{user_id}", h.GetCurrentBalance)
-	r.Get("/balances/historical/{user_id}", h.GetHistoricalBalance)
-	r.Get("/balances/at-time/{user_id}", h.GetBalanceAtTime)
+	r.Get("/balances/current", h.GetCurrentBalance)
+	r.Get("/balances/historical", h.GetHistoricalBalance)
+	r.Get("/balances/at-time", h.GetBalanceAtTime)
 }
 
 func (h *BalanceHandler) GetCurrentBalance(w http.ResponseWriter, r *http.Request) {
-	userIDInt, err := strconv.Atoi(chi.URLParam(r, "user_id"))
+
+	targetID, err := authorizeAndGetTargetID(r)
 	if err != nil {
-		h.respondError(w, http.StatusBadRequest, "invalid user id")
+		if he, ok := err.(*handlerError); ok {
+			h.respondError(w, he.statusCode, he.message)
+		} else {
+			h.respondError(w, http.StatusInternalServerError, "an internal server error occurred")
+		}
 		return
 	}
 
-	balance, err := h.service.GetCurrentBalance(userIDInt)
+	balance, err := h.service.GetCurrentBalance(targetID)
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -45,9 +51,13 @@ func (h *BalanceHandler) GetCurrentBalance(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *BalanceHandler) GetHistoricalBalance(w http.ResponseWriter, r *http.Request) {
-	userIDInt, err := strconv.Atoi(chi.URLParam(r, "user_id"))
+	targetID, err := authorizeAndGetTargetID(r)
 	if err != nil {
-		h.respondError(w, http.StatusBadRequest, "invalid user id")
+		if he, ok := err.(*handlerError); ok {
+			h.respondError(w, he.statusCode, he.message)
+		} else {
+			h.respondError(w, http.StatusInternalServerError, "an internal server error occurred")
+		}
 		return
 	}
 
@@ -59,9 +69,13 @@ func (h *BalanceHandler) GetHistoricalBalance(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	balances, err := h.service.GetHistoricalBalance(userIDInt, limit)
+	balances, err := h.service.GetHistoricalBalance(targetID, limit)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, err.Error())
+		if he, ok := err.(*handlerError); ok {
+			h.respondError(w, he.statusCode, he.message)
+		} else {
+			h.respondError(w, http.StatusInternalServerError, "an internal server error occurred")
+		}
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -71,10 +85,13 @@ func (h *BalanceHandler) GetHistoricalBalance(w http.ResponseWriter, r *http.Req
 func (h *BalanceHandler) GetBalanceAtTime(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	userIDStr := chi.URLParam(r, "user_id")
-	userID, err := strconv.Atoi(userIDStr)
+	targetID, err := authorizeAndGetTargetID(r)
 	if err != nil {
-		h.respondError(w, http.StatusBadRequest, "invalid user id")
+		if he, ok := err.(*handlerError); ok {
+			h.respondError(w, he.statusCode, he.message)
+		} else {
+			h.respondError(w, http.StatusInternalServerError, "an internal server error occurred")
+		}
 		return
 	}
 
@@ -89,9 +106,13 @@ func (h *BalanceHandler) GetBalanceAtTime(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	balance, err := h.service.GetBalanceAtTime(userID, queryTime)
+	balance, err := h.service.GetBalanceAtTime(targetID, queryTime)
 	if err != nil {
-		h.respondError(w, http.StatusInternalServerError, err.Error())
+		if he, ok := err.(*handlerError); ok {
+			h.respondError(w, he.statusCode, he.message)
+		} else {
+			h.respondError(w, http.StatusInternalServerError, "an internal server error occurred")
+		}
 		return
 	}
 
@@ -102,4 +123,38 @@ func (h *BalanceHandler) GetBalanceAtTime(w http.ResponseWriter, r *http.Request
 func (h *BalanceHandler) respondError(w http.ResponseWriter, code int, msg string) {
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+func authorizeAndGetTargetID(r *http.Request) (int, error) {
+	claims, ok := middleware.UserClaimsFromContext(r.Context())
+	if !ok {
+		return 0, &handlerError{statusCode: http.StatusUnauthorized, message: "invalid token claims"}
+	}
+
+	targetUserIDStr := r.URL.Query().Get("user_id")
+	if targetUserIDStr != "" {
+		if claims.Role != "admin" {
+			return 0, &handlerError{statusCode: http.StatusForbidden, message: "you do not have permission to view other users' balances"}
+		}
+		targetID, err := strconv.Atoi(targetUserIDStr)
+		if err != nil {
+			return 0, &handlerError{statusCode: http.StatusBadRequest, message: "invalid user_id in query parameter"}
+		}
+		return targetID, nil
+	}
+
+	targetID, err := strconv.Atoi(claims.UserID)
+	if err != nil {
+		return 0, &handlerError{statusCode: http.StatusInternalServerError, message: "invalid user_id in token"}
+	}
+	return targetID, nil
+}
+
+type handlerError struct {
+	statusCode int
+	message    string
+}
+
+func (e *handlerError) Error() string {
+	return e.message
 }

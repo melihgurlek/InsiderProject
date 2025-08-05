@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/melihgurlek/backend-path/pkg"
 )
 
 // TestHandler provides test endpoints for middleware validation.
@@ -69,6 +70,16 @@ func (h *TestHandler) Error(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "test error", code)
 }
 
+func (h *TestHandler) GenerateTestToken(w http.ResponseWriter, r *http.Request) {
+	token, err := pkg.GenerateToken("your-jwt-secret", "1", "user")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
+}
+
 // Slow handles GET /api/v1/test/slow - intentionally slow to test performance monitoring.
 func (h *TestHandler) Slow(w http.ResponseWriter, r *http.Request) {
 	// Simulate some processing time
@@ -117,4 +128,5 @@ func (h *TestHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/slow", h.Slow)
 	r.Get("/health", h.Health)
 	r.Get("/cache", h.CacheTest)
+	r.Get("/generate-token", h.GenerateTestToken)
 }

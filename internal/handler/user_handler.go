@@ -106,6 +106,17 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // ListUsers handles GET /users
 func (h *UserHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.UserClaimsFromContext(r.Context())
+	if !ok {
+		h.respondError(w, http.StatusUnauthorized, "invalid token claims")
+		return
+	}
+
+	if claims.Role != "admin" {
+		h.respondError(w, http.StatusForbidden, "you do not have permission to list users")
+		return
+	}
+
 	users, err := h.service.ListUsers()
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, "failed to list users")
