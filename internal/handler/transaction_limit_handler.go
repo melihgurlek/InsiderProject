@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/melihgurlek/backend-path/internal/domain"
+	"github.com/melihgurlek/backend-path/internal/middleware"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -28,11 +29,23 @@ func (h *TransactionLimitHandler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *TransactionLimitHandler) ListRules(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.UserClaimsFromContext(r.Context())
+	if !ok {
+		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
 	userID, err := strconv.Atoi(chi.URLParam(r, "userID"))
 	if err != nil {
 		http.Error(w, "invalid userID", http.StatusBadRequest)
 		return
 	}
+
+	if claims.Role != "admin" && claims.UserID != strconv.Itoa(userID) {
+		http.Error(w, "you do not have permission to list rules", http.StatusForbidden)
+		return
+	}
+
 	rules, err := h.Service.ListRules(r.Context(), userID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -54,11 +67,23 @@ type addRuleRequest struct {
 }
 
 func (h *TransactionLimitHandler) AddRule(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.UserClaimsFromContext(r.Context())
+	if !ok {
+		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
 	userID, err := strconv.Atoi(chi.URLParam(r, "userID"))
 	if err != nil {
 		http.Error(w, "invalid userID", http.StatusBadRequest)
 		return
 	}
+
+	if claims.Role != "admin" && claims.UserID != strconv.Itoa(userID) {
+		http.Error(w, "you do not have permission to add rules", http.StatusForbidden)
+		return
+	}
+
 	var req addRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -87,8 +112,25 @@ func (h *TransactionLimitHandler) AddRule(w http.ResponseWriter, r *http.Request
 }
 
 func (h *TransactionLimitHandler) RemoveRule(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.UserClaimsFromContext(r.Context())
+	if !ok {
+		http.Error(w, "invalid token claims", http.StatusUnauthorized)
+		return
+	}
+
+	userID, err := strconv.Atoi(chi.URLParam(r, "userID"))
+	if err != nil {
+		http.Error(w, "invalid userID", http.StatusBadRequest)
+		return
+	}
+
+	if claims.Role != "admin" && claims.UserID != strconv.Itoa(userID) {
+		http.Error(w, "you do not have permission to remove rules", http.StatusForbidden)
+		return
+	}
+
 	ruleID := chi.URLParam(r, "ruleID")
-	if err := h.Service.RemoveRule(r.Context(), ruleID); err != nil {
+	if err := h.Service.RemoveRule(r.Context(), userID, ruleID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

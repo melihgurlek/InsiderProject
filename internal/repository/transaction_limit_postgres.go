@@ -125,11 +125,18 @@ func (r *transactionLimitPostgresRepository) AddRule(ctx context.Context, rule d
 	return rule, nil
 }
 
-func (r *transactionLimitPostgresRepository) RemoveRule(ctx context.Context, ruleID string) error {
-	_, err := r.db.Exec(ctx, `DELETE FROM transaction_limit_rules WHERE id = $1`, ruleID)
+func (r *transactionLimitPostgresRepository) RemoveRule(ctx context.Context, userID int, ruleID string) error {
+	query := `DELETE FROM transaction_limit_rules WHERE id = $1 AND user_id = $2`
+
+	result, err := r.db.Exec(ctx, query, ruleID, userID)
 	if err != nil {
 		return fmt.Errorf("remove rule: %w", err)
 	}
+
+	if result.RowsAffected() == 0 {
+		return errors.New("rule not found or permission denied")
+	}
+
 	return nil
 }
 

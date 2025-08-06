@@ -56,8 +56,8 @@ func (s *transactionLimitService) AddRule(ctx context.Context, rule domain.Trans
 	return rule, nil
 }
 
-func (s *transactionLimitService) RemoveRule(ctx context.Context, ruleID string) error {
-	return s.repo.RemoveRule(ctx, ruleID)
+func (s *transactionLimitService) RemoveRule(ctx context.Context, userID int, ruleID string) error {
+	return s.repo.RemoveRule(ctx, userID, ruleID)
 }
 
 func (s *transactionLimitService) ListRules(ctx context.Context, userID int) ([]domain.TransactionLimitRule, error) {

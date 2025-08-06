@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/melihgurlek/backend-path/internal/domain"
@@ -12,12 +13,16 @@ import (
 
 // TransactionHandler handles transaction-related HTTP requests.
 type TransactionHandler struct {
-	service domain.TransactionService
+	service      domain.TransactionService
+	limitService domain.TransactionLimitService
 }
 
 // NewTransactionHandler creates a new TransactionHandler.
-func NewTransactionHandler(service domain.TransactionService) *TransactionHandler {
-	return &TransactionHandler{service: service}
+func NewTransactionHandler(service domain.TransactionService, limitService domain.TransactionLimitService) *TransactionHandler {
+	return &TransactionHandler{
+		service:      service,
+		limitService: limitService,
+	}
 }
 
 func (h *TransactionHandler) RegisterRoutes(r chi.Router) {
@@ -115,7 +120,13 @@ func (h *TransactionHandler) Transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.service.Transfer(req.FromUserID, req.ToUserID, float64(req.Amount))
+	err := h.limitService.CheckAndRecordTransaction(r.Context(), req.FromUserID, req.Amount, "USD", time.Now())
+	if err != nil {
+		h.respondError(w, http.StatusForbidden, err.Error())
+		return
+	}
+
+	err = h.service.Transfer(req.FromUserID, req.ToUserID, float64(req.Amount))
 	if err != nil {
 		h.respondError(w, http.StatusInternalServerError, err.Error())
 		return

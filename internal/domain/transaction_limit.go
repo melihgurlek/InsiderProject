@@ -32,7 +32,7 @@ const (
 type TransactionLimitRepository interface {
 	GetRulesForUser(ctx context.Context, userID int) ([]TransactionLimitRule, error)
 	AddRule(ctx context.Context, rule TransactionLimitRule) (TransactionLimitRule, error)
-	RemoveRule(ctx context.Context, ruleID string) error
+	RemoveRule(ctx context.Context, userID int, ruleID string) error
 	RecordTransaction(ctx context.Context, userID int, amount float64, currency string, timestamp time.Time) error
 	GetTransactionSum(ctx context.Context, userID int, window time.Duration, currency string) (float64, error)
 	GetTransactionCount(ctx context.Context, userID int, window time.Duration) (int, error)
@@ -44,6 +44,6 @@ type TransactionLimitRepository interface {
 type TransactionLimitService interface {
 	CheckAndRecordTransaction(ctx context.Context, userID int, amount float64, currency string, timestamp time.Time) error
 	AddRule(ctx context.Context, rule TransactionLimitRule) (TransactionLimitRule, error)
-	RemoveRule(ctx context.Context, ruleID string) error
+	RemoveRule(ctx context.Context, userID int, ruleID string) error
 	ListRules(ctx context.Context, userID int) ([]TransactionLimitRule, error)
 }

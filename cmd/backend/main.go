@@ -86,7 +86,10 @@ func main() {
 	balanceRepo := repository.NewBalancePostgresRepository(pool)
 	transactionRepo := repository.NewTransactionPostgresRepository(pool)
 	transactionService := service.NewTransactionService(transactionRepo, balanceRepo)
-	transactionHandler := handler.NewTransactionHandler(transactionService)
+	transactionLimitRepo := repository.NewTransactionLimitPostgresRepository(pool)
+	transactionLimitService := service.NewTransactionLimitService(transactionLimitRepo)
+	transactionLimitHandler := handler.NewTransactionLimitHandler(transactionLimitService)
+	transactionHandler := handler.NewTransactionHandler(transactionService, transactionLimitService)
 
 	balanceService := service.NewBalanceService(balanceRepo)
 	balanceHandler := handler.NewBalanceHandler(balanceService)
@@ -95,10 +98,6 @@ func main() {
 	scheduledRepo := repository.NewScheduledTransactionPostgresRepository(pool)
 	scheduledService := service.NewScheduledTransactionService(scheduledRepo, transactionService)
 	scheduledHandler := handler.NewScheduledTransactionHandler(scheduledService)
-
-	transactionLimitRepo := repository.NewTransactionLimitPostgresRepository(pool)
-	transactionLimitService := service.NewTransactionLimitService(transactionLimitRepo)
-	transactionLimitHandler := handler.NewTransactionLimitHandler(transactionLimitService)
 
 	// Initialize business metrics service
 	businessMetricsService := service.NewBusinessMetricsService(
@@ -215,11 +214,11 @@ func main() {
 			// --- Transaction Routes ---
 			transactionHandler.RegisterRoutes(r)
 
-			// --- Balance Routes ---
-			balanceHandler.RegisterRoutes(r)
-
 			// --- Transaction Limit Routes ---
 			transactionLimitHandler.RegisterRoutes(r)
+
+			// --- Balance Routes ---
+			balanceHandler.RegisterRoutes(r)
 
 		})
 	})
