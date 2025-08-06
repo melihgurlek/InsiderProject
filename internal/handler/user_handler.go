@@ -4,11 +4,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/melihgurlek/backend-path/internal/domain"
 	"github.com/melihgurlek/backend-path/internal/middleware"
 	"github.com/melihgurlek/backend-path/pkg"
+	"github.com/redis/go-redis/v9"
 )
 
 // RegisterRequest represents the request body for user registration.
@@ -35,17 +39,23 @@ type LoginRequest struct {
 type UserHandler struct {
 	service   domain.UserService
 	jwtSecret string
+	cache     *redis.Client
 }
 
 // NewUserHandler creates a new UserHandler.
-func NewUserHandler(service domain.UserService, jwtSecret string) *UserHandler {
-	return &UserHandler{service: service, jwtSecret: jwtSecret}
+func NewUserHandler(service domain.UserService, jwtSecret string, cache *redis.Client) *UserHandler {
+	return &UserHandler{
+		service:   service,
+		jwtSecret: jwtSecret,
+		cache:     cache,
+	}
 }
 
 // RegisterRoutes registers user auth routes to the router.
 func (h *UserHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/auth/register", h.Register)
 	r.Post("/auth/login", h.Login)
+	r.Post("/auth/logout", h.Logout)
 
 	// User CRUD
 	r.Get("/users", h.ListUsers)
@@ -102,6 +112,59 @@ func (h *UserHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"role":     user.Role,
 		"token":    token,
 	})
+}
+
+// Logout handles token invalidation by adding its JTI to the denylist.
+func (h *UserHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	tokenString := r.Header.Get("Authorization")
+	if tokenString == "" || !strings.HasPrefix(tokenString, "Bearer ") {
+		h.respondError(w, http.StatusUnauthorized, "authorization header missing or malformed")
+		return
+	}
+	tokenString = strings.TrimPrefix(tokenString, "Bearer ")
+
+	// We don't need to fully validate the token, just parse its claims.
+	token, _, err := new(jwt.Parser).ParseUnverified(tokenString, jwt.MapClaims{})
+	if err != nil {
+		h.respondError(w, http.StatusBadRequest, "invalid token")
+		return
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		h.respondError(w, http.StatusBadRequest, "invalid token claims")
+		return
+	}
+
+	jti, ok := claims["jti"].(string)
+	expFloat, ok2 := claims["exp"].(float64)
+	if !ok || !ok2 {
+		h.respondError(w, http.StatusBadRequest, "token missing required claims")
+		return
+	}
+
+	// Calculate remaining time until the token expires.
+	exp := time.Unix(int64(expFloat), 0)
+	ttl := time.Until(exp)
+
+	// If the token is already expired, no need to add it to the denylist.
+	if ttl <= 0 {
+		h.respondError(w, http.StatusOK, "token already expired")
+		return
+	}
+
+	// Add the token's JTI to the denylist in Redis with a TTL.
+	// The TTL ensures the denylist doesn't grow forever.
+	if h.cache != nil {
+		err = h.cache.Set(r.Context(), "denylist:"+jti, "true", ttl).Err()
+		if err != nil {
+			h.respondError(w, http.StatusInternalServerError, "could not log out")
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "logged out successfully"})
 }
 
 // ListUsers handles GET /users

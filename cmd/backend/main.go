@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -81,7 +82,12 @@ func main() {
 	// Set up repository, service, handler
 	userRepo := repository.NewUserPostgresRepository(pool)
 	userService := service.NewUserService(userRepo)
-	userHandler := handler.NewUserHandler(userService, cfg.JWTSecret)
+
+	var redisClient *redis.Client
+	if redisCache != nil {
+		redisClient = redisCache.GetClient()
+	}
+	userHandler := handler.NewUserHandler(userService, cfg.JWTSecret, redisClient)
 
 	balanceRepo := repository.NewBalancePostgresRepository(pool)
 	transactionRepo := repository.NewTransactionPostgresRepository(pool)
@@ -143,7 +149,7 @@ func main() {
 	workerHandler := handler.NewWorkerHandler(transactionProcessor, batchProcessor)
 
 	jwtValidator := pkg.NewJWTValidator(cfg.JWTSecret)
-	authMiddleware := middleware.NewAuthMiddleware(jwtValidator)
+	authMiddleware := middleware.NewAuthMiddleware(jwtValidator, redisClient)
 
 	// Set up chi router
 	r := chi.NewRouter()
@@ -174,6 +180,7 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.With(validateRegister).Post("/auth/register", userHandler.Register)
 		r.With(validateLogin).Post("/auth/login", userHandler.Login)
+		r.With(authMiddleware.Middleware).Post("/auth/logout", userHandler.Logout)
 
 		// Test routes (no auth required)
 		r.Route("/test", func(r chi.Router) {

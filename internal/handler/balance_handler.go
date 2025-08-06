@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -29,9 +30,11 @@ func (h *BalanceHandler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *BalanceHandler) GetCurrentBalance(w http.ResponseWriter, r *http.Request) {
+	fmt.Printf("DEBUG: GetCurrentBalance called\n")
 
 	targetID, err := authorizeAndGetTargetID(r)
 	if err != nil {
+		fmt.Printf("DEBUG: authorizeAndGetTargetID error: %v\n", err)
 		if he, ok := err.(*handlerError); ok {
 			h.respondError(w, he.statusCode, he.message)
 		} else {
@@ -40,14 +43,35 @@ func (h *BalanceHandler) GetCurrentBalance(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	fmt.Printf("DEBUG: targetID: %d\n", targetID)
+
 	balance, err := h.service.GetCurrentBalance(targetID)
 	if err != nil {
+		fmt.Printf("DEBUG: GetCurrentBalance service error: %v\n", err)
 		h.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	fmt.Printf("DEBUG: balance: %+v\n", balance)
+
+	// If no balance record exists, return a default balance with 0 amount
+	if balance == nil {
+		fmt.Printf("DEBUG: balance is nil, creating default\n")
+		balance = &domain.Balance{
+			UserID:        targetID,
+			Amount:        0,
+			LastUpdatedAt: time.Now(),
+		}
+	}
+
+	fmt.Printf("DEBUG: about to encode balance: %+v\n", balance)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(balance)
+	if err := json.NewEncoder(w).Encode(balance); err != nil {
+		fmt.Printf("DEBUG: JSON encode error: %v\n", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	fmt.Printf("DEBUG: GetCurrentBalance completed successfully\n")
 }
 
 func (h *BalanceHandler) GetHistoricalBalance(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +138,15 @@ func (h *BalanceHandler) GetBalanceAtTime(w http.ResponseWriter, r *http.Request
 			h.respondError(w, http.StatusInternalServerError, "an internal server error occurred")
 		}
 		return
+	}
+
+	// If no balance record exists for the given time, return a default balance
+	if balance == nil {
+		balance = &domain.Balance{
+			UserID:        targetID,
+			Amount:        0,
+			LastUpdatedAt: queryTime,
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

@@ -58,6 +58,7 @@ func (h *DefaultErrorHandler) HandleError(w http.ResponseWriter, r *http.Request
 		response.Message = err.Error()
 	} else if statusCode >= 500 {
 		response.Message = "Internal server error"
+		response.Error = "Internal server error"
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // JWTValidator defines the interface for validating JWT tokens.
@@ -16,16 +18,18 @@ type JWTValidator interface {
 type UserClaims struct {
 	UserID string
 	Role   string
+	JTI    string // JTI is the JWT ID
 }
 
 // AuthMiddleware holds dependencies for authentication middleware.
 type AuthMiddleware struct {
 	validator JWTValidator
+	cache     *redis.Client
 }
 
 // NewAuthMiddleware constructs a new AuthMiddleware with the given validator.
-func NewAuthMiddleware(validator JWTValidator) *AuthMiddleware {
-	return &AuthMiddleware{validator: validator}
+func NewAuthMiddleware(validator JWTValidator, cache *redis.Client) *AuthMiddleware {
+	return &AuthMiddleware{validator: validator, cache: cache}
 }
 
 // Middleware is the HTTP middleware function for authentication.
@@ -55,7 +59,26 @@ func (a *AuthMiddleware) Middleware(next http.Handler) http.Handler {
 
 		fmt.Printf("Token validated successfully for user: %s, role: %s\n", claims.UserID, claims.Role)
 
-		_ = claims // will be used in the next step
+		// Check if the token is in the denylist (only if cache is available)
+		if a.cache != nil {
+			// The key exists if Get() returns no error.
+			err := a.cache.Get(r.Context(), "denylist:"+claims.JTI).Err()
+
+			// If err is nil, it means the key was found, so the token IS denied.
+			if err == nil {
+				http.Error(w, "Token has been invalidated", http.StatusUnauthorized)
+				return
+			}
+
+			// We only proceed if the error is redis.Nil (key not found).
+			// Any other error is a real server error.
+			if err != redis.Nil {
+				// log.Error().Err(err).Msg("Failed to check token denylist")
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+
 		ctx := WithUserClaims(r.Context(), claims)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
