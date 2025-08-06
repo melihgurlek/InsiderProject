@@ -69,7 +69,7 @@ func GenerateToken(secret string, userID string, role string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role":    role,
-		"exp":     time.Now().Add(24 * time.Hour).Unix(), // 24 hour expiration
+		"exp":     time.Now().Add(15 * time.Minute).Unix(), // 15 minute expiration
 		"iat":     time.Now().Unix(),
 	}
 
