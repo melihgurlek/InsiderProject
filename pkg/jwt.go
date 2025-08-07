@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/melihgurlek/backend-path/internal/middleware"
 )
 
@@ -58,9 +59,15 @@ func (j *JWTValidatorImpl) ValidateToken(tokenString string) (*middleware.UserCl
 		return nil, errors.New("role claim missing or invalid")
 	}
 
+	jti, ok := claims["jti"].(string)
+	if !ok {
+		return nil, errors.New("jti claim missing or invalid")
+	}
+
 	return &middleware.UserClaims{
 		UserID: userID,
 		Role:   role,
+		JTI:    jti,
 	}, nil
 }
 
@@ -69,6 +76,7 @@ func GenerateToken(secret string, userID string, role string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"role":    role,
+		"jti":     uuid.New().String(),
 		"exp":     time.Now().Add(15 * time.Minute).Unix(), // 15 minute expiration
 		"iat":     time.Now().Unix(),
 	}

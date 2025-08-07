@@ -151,6 +151,11 @@ func (c *RedisCache) Close() error {
 	return c.client.Close()
 }
 
+// GetClient returns the underlying Redis client
+func (c *RedisCache) GetClient() *redis.Client {
+	return c.client
+}
+
 // GetStats returns cache statistics
 func (c *RedisCache) GetStats(ctx context.Context) (*redis.PoolStats, error) {
 	stats := c.client.PoolStats()
