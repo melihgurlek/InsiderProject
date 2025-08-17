@@ -2,11 +2,30 @@ package repository
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/melihgurlek/backend-path/internal/domain"
 )
+
+// getTestConn returns a pgxpool.Pool for testing, using the DB_URL env var or a default.
+func getTestConn(t *testing.T) *pgxpool.Pool {
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/backend_path?sslmode=disable"
+	}
+	config, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		t.Fatalf("failed to parse db config: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("failed to connect to db: %v", err)
+	}
+	return pool
+}
 
 func TestBalancePostgresRepository_GetHistoricalBalance(t *testing.T) {
 	conn := getTestConn(t)
@@ -16,7 +35,7 @@ func TestBalancePostgresRepository_GetHistoricalBalance(t *testing.T) {
 		conn.Exec(context.Background(), "DELETE FROM transactions WHERE from_user_id = $1 OR to_user_id = $1", userID)
 		conn.Exec(context.Background(), "DELETE FROM balances WHERE user_id = $1", userID)
 		conn.Exec(context.Background(), "DELETE FROM users WHERE id = $1", userID)
-		_ = conn.Close(context.Background())
+		conn.Close()
 	}()
 
 	// Insert test user
@@ -58,7 +77,7 @@ func TestBalancePostgresRepository_GetHistoricalBalance(t *testing.T) {
 	conn.Exec(context.Background(), "INSERT INTO transactions (from_user_id, to_user_id, amount, type, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)", tx3.FromUserID, tx3.ToUserID, tx3.Amount, tx3.Type, tx3.Status, tx3.CreatedAt)
 
 	// Call GetHistoricalBalance
-	balances, err := repo.GetHistoricalBalance(userID)
+	balances, err := repo.GetHistoricalBalance(userID, 7771)
 	if err != nil {
 		t.Fatalf("GetHistoricalBalance failed: %v", err)
 	}

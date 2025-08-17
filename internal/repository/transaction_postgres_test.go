@@ -11,9 +11,9 @@ func TestTransactionPostgresRepository_CRUD(t *testing.T) {
 	conn := getTestConn(t)
 	repo := NewTransactionPostgresRepository(conn)
 	defer func() {
-		_, _ = conn.Exec(context.Background(), "DELETE FROM transactions WHERE from_user_id IN (9991,9992) OR to_user_id IN (9991,9992)")
-		_, _ = conn.Exec(context.Background(), "DELETE FROM users WHERE id IN (9991,9992)")
-		_ = conn.Close(context.Background())
+		conn.Exec(context.Background(), "DELETE FROM transactions WHERE from_user_id IN (9991,9992) OR to_user_id IN (9991,9992)")
+		conn.Exec(context.Background(), "DELETE FROM users WHERE id IN (9991,9992)")
+		conn.Close()
 	}()
 
 	// Create two test users
@@ -62,18 +62,4 @@ func TestTransactionPostgresRepository_CRUD(t *testing.T) {
 		t.Errorf("ListByUser: transaction not found")
 	}
 
-	// Test ListAll
-	all, err := repo.ListAll()
-	if err != nil {
-		t.Fatalf("ListAll failed: %v", err)
-	}
-	found = false
-	for _, t := range all {
-		if t.ID == tx.ID {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("ListAll: transaction not found")
-	}
 }

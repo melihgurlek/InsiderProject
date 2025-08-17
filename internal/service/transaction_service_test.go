@@ -2,44 +2,63 @@ package service
 
 import (
 	"context"
+	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/melihgurlek/backend-path/internal/domain"
 	"github.com/melihgurlek/backend-path/internal/repository"
 )
 
+// getTestPool returns a pgxpool.Pool for testing, using the DB_URL env var or a default.
+func getTestPool(t *testing.T) *pgxpool.Pool {
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/backend_path?sslmode=disable"
+	}
+	config, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		t.Fatalf("failed to parse db config: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		t.Fatalf("failed to connect to db: %v", err)
+	}
+	return pool
+}
+
 func TestTransactionServiceImpl_CreditDebitTransfer(t *testing.T) {
-	conn := getTestConn(t)
-	txRepo := repository.NewTransactionPostgresRepository(conn)
-	balRepo := repository.NewBalancePostgresRepository(conn)
+	pool := getTestPool(t)
+	txRepo := repository.NewTransactionPostgresRepository(pool)
+	balRepo := repository.NewBalancePostgresRepository(pool)
 	service := NewTransactionService(txRepo, balRepo)
 	defer func() {
-		conn.Exec(context.Background(), "DELETE FROM transactions WHERE from_user_id IN (8881,8882) OR to_user_id IN (8881,8882)")
-		conn.Exec(context.Background(), "DELETE FROM balances WHERE user_id IN (8881,8882)")
-		conn.Exec(context.Background(), "DELETE FROM users WHERE id IN (8881,8882)")
-		_ = conn.Close(context.Background())
+		pool.Exec(context.Background(), "DELETE FROM transactions WHERE from_user_id IN (8881,8882) OR to_user_id IN (8881,8882)")
+		pool.Exec(context.Background(), "DELETE FROM balances WHERE user_id IN (8881,8882)")
+		pool.Exec(context.Background(), "DELETE FROM users WHERE id IN (8881,8882)")
+		pool.Close()
 	}()
 
 	// Create two test users
 	u1 := &domain.User{ID: 8881, Username: "svcuser1", Email: "svcuser1@example.com", PasswordHash: "hash", Role: "user"}
-	_, err := conn.Exec(context.Background(), "INSERT INTO users (id, username, email, password_hash, role, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,NOW(),NOW())	ON CONFLICT (id) DO NOTHING", u1.ID, u1.Username, u1.Email, u1.PasswordHash, u1.Role)
+	_, err := pool.Exec(context.Background(), "INSERT INTO users (id, username, email, password_hash, role, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,NOW(),NOW())	ON CONFLICT (id) DO NOTHING", u1.ID, u1.Username, u1.Email, u1.PasswordHash, u1.Role)
 	if err != nil {
 		t.Fatalf("Failed to insert user1: %v", err)
 	}
 
-	row := conn.QueryRow(context.Background(), "SELECT id FROM users WHERE id = $1", u1.ID)
+	row := pool.QueryRow(context.Background(), "SELECT id FROM users WHERE id = $1", u1.ID)
 	var id int
 	if err := row.Scan(&id); err != nil {
 		t.Fatalf("User1 not found after insert: %v", err)
 	}
 
 	u2 := &domain.User{ID: 8882, Username: "svcuser2", Email: "svcuser2@example.com", PasswordHash: "hash", Role: "user"}
-	_, err = conn.Exec(context.Background(), "INSERT INTO users (id, username, email, password_hash, role, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,NOW(),NOW()) ON CONFLICT (id) DO NOTHING", u2.ID, u2.Username, u2.Email, u2.PasswordHash, u2.Role)
+	_, err = pool.Exec(context.Background(), "INSERT INTO users (id, username, email, password_hash, role, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,NOW(),NOW()) ON CONFLICT (id) DO NOTHING", u2.ID, u2.Username, u2.Email, u2.PasswordHash, u2.Role)
 	if err != nil {
 		t.Fatalf("Failed to insert user2: %v", err)
 	}
 
-	row = conn.QueryRow(context.Background(), "SELECT id FROM users WHERE id = $1", u2.ID)
+	row = pool.QueryRow(context.Background(), "SELECT id FROM users WHERE id = $1", u2.ID)
 	if err := row.Scan(&id); err != nil {
 		t.Fatalf("User2 not found after insert: %v", err)
 	}

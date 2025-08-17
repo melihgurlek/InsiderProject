@@ -5,30 +5,34 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/melihgurlek/backend-path/internal/domain"
 )
 
-// getTestConn returns a pgx.Conn for testing, using the DB_URL env var or a default.
-func getTestConn(t *testing.T) *pgx.Conn {
+// getTestPool returns a pgxpool.Pool for testing, using the DB_URL env var or a default.
+func getTestPool(t *testing.T) *pgxpool.Pool {
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5432/backend_path?sslmode=disable"
 	}
-	conn, err := pgx.Connect(context.Background(), dbURL)
+	config, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		t.Fatalf("failed to parse db config: %v", err)
+	}
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
 		t.Fatalf("failed to connect to db: %v", err)
 	}
-	return conn
+	return pool
 }
 
 func TestUserPostgresRepository_CreateAndGet(t *testing.T) {
-	conn := getTestConn(t)
-	repo := NewUserPostgresRepository(conn)
+	pool := getTestPool(t)
+	repo := NewUserPostgresRepository(pool)
 	defer func() {
 		// Clean up test user
-		conn.Exec(context.Background(), "DELETE FROM users WHERE username = 'testuser'")
-		_ = conn.Close(context.Background())
+		pool.Exec(context.Background(), "DELETE FROM users WHERE username = 'testuser'")
+		pool.Close()
 	}()
 
 	user := &domain.User{
@@ -76,11 +80,11 @@ func TestUserPostgresRepository_CreateAndGet(t *testing.T) {
 }
 
 func TestUserPostgresRepository_UpdateDeleteList(t *testing.T) {
-	conn := getTestConn(t)
-	repo := NewUserPostgresRepository(conn)
+	pool := getTestPool(t)
+	repo := NewUserPostgresRepository(pool)
 	defer func() {
-		conn.Exec(context.Background(), "DELETE FROM users WHERE username LIKE 'testuser%' OR username = 'updateduser'")
-		_ = conn.Close(context.Background())
+		pool.Exec(context.Background(), "DELETE FROM users WHERE username LIKE 'testuser%' OR username = 'updateduser'")
+		pool.Close()
 	}()
 
 	// Create two users

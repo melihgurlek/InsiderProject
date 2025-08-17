@@ -1,0 +1,373 @@
+
+{
+	"info": {
+		"_postman_id": "scheduled-transactions-api",
+		"name": "Scheduled Transactions API",
+		"description": "Complete API collection for testing scheduled transactions functionality",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Authentication",
+			"item": [
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"username\": \"testuser1\",\n  \"password\": \"password123\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/auth/login",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"auth",
+								"login"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Scheduled Transactions",
+			"item": [
+				{
+					"name": "Create One-Time Credit Transaction",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 127,\n  \"amount\": 100.50,\n  \"type\": \"credit\",\n  \"schedule_at\": \"{{scheduleTime}}\",\n  \"recurring\": false,\n  \"description\": \"Test one-time credit via Postman\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Recurring Daily Debit Transaction",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 127,\n  \"amount\": 25.00,\n  \"type\": \"debit\",\n  \"schedule_at\": \"{{scheduleTime}}\",\n  \"recurring\": true,\n  \"recurrence\": \"daily\",\n  \"max_runs\": 5,\n  \"description\": \"Test recurring daily debit via Postman\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Weekly Transfer Transaction",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"user_id\": 127,\n  \"to_user_id\": 126,\n  \"amount\": 50.00,\n  \"type\": \"transfer\",\n  \"schedule_at\": \"{{scheduleTime}}\",\n  \"recurring\": true,\n  \"recurrence\": \"weekly\",\n  \"description\": \"Test weekly transfer via Postman\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Scheduled Transaction Statistics",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions/stats",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions",
+								"stats"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "List User Scheduled Transactions",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions?user_id=127",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions"
+							],
+							"query": [
+								{
+									"key": "user_id",
+									"value": "127"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Specific Scheduled Transaction",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions/{{transactionId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions",
+								"{{transactionId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update Scheduled Transaction",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"amount\": 75.00,\n  \"description\": \"Updated description via Postman\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions/{{transactionId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions",
+								"{{transactionId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Execute Scheduled Transactions",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions/execute",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions",
+								"execute"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Scheduled Transaction",
+					"request": {
+						"method": "DELETE",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{token}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/scheduled-transactions/{{transactionId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"scheduled-transactions",
+								"{{transactionId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Other APIs",
+			"item": [
+				{
+					"name": "Health Check",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/v1/test/health",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"test",
+								"health"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Prometheus Metrics",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/metrics",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"metrics"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "transactionId",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "scheduleTime",
+			"value": "",
+			"type": "string"
+		}
+	]
+} 

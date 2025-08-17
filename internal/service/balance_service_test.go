@@ -10,7 +10,7 @@ import (
 )
 
 func TestBalanceServiceImpl_GetHistoricalBalance(t *testing.T) {
-	conn := getTestConn(t)
+	conn := repository.getTestConn(t)
 	balRepo := repository.NewBalancePostgresRepository(conn)
 	service := NewBalanceService(balRepo)
 	userID := 8881
@@ -60,7 +60,7 @@ func TestBalanceServiceImpl_GetHistoricalBalance(t *testing.T) {
 	conn.Exec(context.Background(), "INSERT INTO transactions (from_user_id, to_user_id, amount, type, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)", tx3.FromUserID, tx3.ToUserID, tx3.Amount, tx3.Type, tx3.Status, tx3.CreatedAt)
 
 	// Call GetHistoricalBalance
-	balances, err := service.GetHistoricalBalance(userID)
+	balances, err := service.GetHistoricalBalance(userID, 7771)
 	if err != nil {
 		t.Fatalf("GetHistoricalBalance failed: %v", err)
 	}
